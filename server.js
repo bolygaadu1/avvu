@@ -14,12 +14,18 @@ const app = express();
 const PORT = process.env.PORT || 4173;
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: true,
+  credentials: true
+}));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Serve static files from dist directory
 app.use(express.static(path.join(__dirname, 'dist')));
+
+// Serve images from images directory
+app.use('/images', express.static(path.join(__dirname, 'images')));
 
 // Create uploads directory if it doesn't exist
 const uploadsDir = path.join(__dirname, 'uploads');
@@ -104,6 +110,7 @@ db.serialize(() => {
 
 // Admin login
 app.post('/api/admin/login', (req, res) => {
+  console.log('Login attempt:', req.body);
   const { username, password } = req.body;
   
   // Simple hardcoded credentials (in production, use proper authentication)
@@ -120,6 +127,7 @@ app.post('/api/admin/login', (req, res) => {
           return res.status(500).json({ error: 'Internal server error' });
         }
         
+        console.log('Login successful for admin');
         res.json({ 
           success: true, 
           sessionId: sessionId,
@@ -128,6 +136,7 @@ app.post('/api/admin/login', (req, res) => {
       }
     );
   } else {
+    console.log('Invalid credentials provided');
     res.status(401).json({ 
       success: false, 
       message: 'Invalid credentials' 
@@ -160,11 +169,14 @@ app.post('/api/admin/verify', (req, res) => {
 // Submit order
 app.post('/api/orders', upload.array('files'), (req, res) => {
   try {
+    console.log('Received order submission');
     const orderData = JSON.parse(req.body.orderData);
     const files = req.files || [];
     
     const orderId = `ORD-${Date.now()}`;
     const orderDate = new Date().toISOString();
+    
+    console.log('Creating order:', orderId);
     
     // Insert order into database
     db.run(`
@@ -195,6 +207,8 @@ app.post('/api/orders', upload.array('files'), (req, res) => {
         return res.status(500).json({ error: 'Failed to create order' });
       }
       
+      console.log('Order created successfully, processing files...');
+      
       // Insert files
       const filePromises = files.map(file => {
         return new Promise((resolve, reject) => {
@@ -218,6 +232,7 @@ app.post('/api/orders', upload.array('files'), (req, res) => {
       
       Promise.all(filePromises)
         .then(() => {
+          console.log('Order and files saved successfully');
           res.json({
             success: true,
             orderId: orderId,
@@ -238,7 +253,7 @@ app.post('/api/orders', upload.array('files'), (req, res) => {
 
 // Get all orders (admin only)
 app.get('/api/orders', (req, res) => {
-  const { sessionId } = req.headers;
+  const sessionId = req.headers.sessionid;
   
   // Verify admin session
   db.get(
@@ -257,7 +272,7 @@ app.get('/api/orders', (req, res) => {
                    'name', f.originalName,
                    'size', f.fileSize,
                    'type', f.fileType,
-                   'path', f.filePath
+                   'path', f.fileName
                  )
                ) as files
         FROM orders o
@@ -335,7 +350,7 @@ app.get('/api/orders/:orderId', (req, res) => {
           name: f.originalName,
           size: f.fileSize,
           type: f.fileType,
-          path: f.filePath
+          path: f.fileName
         }))
       };
       
@@ -348,7 +363,7 @@ app.get('/api/orders/:orderId', (req, res) => {
 app.put('/api/orders/:orderId/status', (req, res) => {
   const { orderId } = req.params;
   const { status } = req.body;
-  const { sessionId } = req.headers;
+  const sessionId = req.headers.sessionid;
   
   // Verify admin session
   db.get(
@@ -393,7 +408,7 @@ app.get('/api/files/:filename', (req, res) => {
 
 // Clear all orders (admin only)
 app.delete('/api/orders', (req, res) => {
-  const { sessionId } = req.headers;
+  const sessionId = req.headers.sessionid;
   
   // Verify admin session
   db.get(
@@ -438,6 +453,11 @@ app.delete('/api/orders', (req, res) => {
   );
 });
 
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'OK', timestamp: new Date().toISOString() });
+});
+
 // Serve React app for all other routes
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
@@ -451,4 +471,6 @@ app.use((err, req, res, next) => {
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
+  console.log(`Database path: ${dbPath}`);
+  console.log(`Uploads directory: ${uploadsDir}`);
 });

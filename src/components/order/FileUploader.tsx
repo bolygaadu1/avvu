@@ -1,7 +1,7 @@
 import { useState, useRef, DragEvent, ChangeEvent, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
-import { Upload, X, FileText, Eye } from 'lucide-react';
+import { Upload, FileText, Eye } from 'lucide-react';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -97,15 +97,6 @@ const FileUploader = ({ onFilesChange, onPageCountChange, onPageRangeChange }: F
     }
   };
 
-  const removeFile = (index: number) => {
-    const updatedFiles = files.filter((_, i) => i !== index);
-    setFiles(updatedFiles);
-    onFilesChange(updatedFiles);
-    onPageCountChange(0);
-    onPageRangeChange('all');
-    toast.info("File removed");
-  };
-
   const openFileDialog = () => {
     if (fileInputRef.current) {
       fileInputRef.current.click();
@@ -192,16 +183,6 @@ const FileUploader = ({ onFilesChange, onPageCountChange, onPageRangeChange }: F
                       <Eye className="h-4 w-4 text-gray-500" />
                     </Button>
                   )}
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      removeFile(index);
-                    }}
-                  >
-                    <X className="h-4 w-4 text-gray-500" />
-                  </Button>
                 </div>
               </div>
             ))}

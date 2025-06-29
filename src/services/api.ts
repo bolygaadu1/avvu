@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.PROD ? '' : 'http://localhost:4173';
+const API_BASE_URL = window.location.origin;
 
 export interface Order {
   orderId: string;
@@ -48,10 +48,17 @@ class ApiService {
 
   private async request(endpoint: string, options: RequestInit = {}) {
     const url = `${API_BASE_URL}/api${endpoint}`;
-    const headers = {
-      'Content-Type': 'application/json',
-      ...options.headers,
-    };
+    const headers: Record<string, string> = {};
+
+    // Only add Content-Type for JSON requests
+    if (options.body && typeof options.body === 'string') {
+      headers['Content-Type'] = 'application/json';
+    }
+
+    // Add custom headers
+    if (options.headers) {
+      Object.assign(headers, options.headers);
+    }
 
     if (this.sessionId) {
       headers['sessionId'] = this.sessionId;
