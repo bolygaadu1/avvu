@@ -11,35 +11,9 @@ import {
 } from "@/components/ui/dialog";
 import { FileText, Download, ChevronLeft, ChevronRight, ChevronUp, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
-import { fileStorage } from '@/services/fileStorage';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Slider } from "@/components/ui/slider";
-
-type OrderFile = {
-  name: string;
-  size: number;
-  type: string;
-  path?: string;
-};
-
-type Order = {
-  orderId: string;
-  fullName: string;
-  phoneNumber: string;
-  printType: string;
-  copies: number;
-  paperSize: string;
-  specialInstructions?: string;
-  files: OrderFile[];
-  orderDate: string;
-  status: string;
-  totalCost: number;
-  printSide: string;
-  selectedPages?: string;
-  colorPages?: string;
-  bwPages?: string;
-  bindingColorType?: string;
-};
+import { apiService, Order } from '@/services/api';
 
 const OrdersList = () => {
   const [orders, setOrders] = useState<Order[]>([]);
@@ -48,35 +22,30 @@ const OrdersList = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [scrollPosition, setScrollPosition] = useState(0);
   const [maxScrollPosition, setMaxScrollPosition] = useState(100);
+  const [loading, setLoading] = useState(true);
   const ordersPerPage = 10;
 
   useEffect(() => {
-    const storedOrders = JSON.parse(localStorage.getItem('xeroxOrders') || '[]');
-    const processedOrders = storedOrders.map((order: Order) => {
-      const processedFiles = order.files.map(file => {
-        if (!file.path) {
-          file.path = `/uploads/${file.name}`;
-        }
-        return file;
-      });
-      
-      return {
-        ...order,
-        files: processedFiles,
-        status: order.status || 'pending'
-      };
-    });
-    
-    setOrders(processedOrders);
-    localStorage.setItem('xeroxOrders', JSON.stringify(processedOrders));
+    loadOrders();
   }, []);
 
-  // Handle scroll position updates
+  const loadOrders = async () => {
+    try {
+      setLoading(true);
+      const ordersData = await apiService.getAllOrders();
+      setOrders(ordersData);
+    } catch (error) {
+      console.error('Error loading orders:', error);
+      toast.error('Failed to load orders');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleScrollPositionChange = (value: number[]) => {
     const newPosition = value[0];
     setScrollPosition(newPosition);
     
-    // Find the scroll container and update its scroll position
     const scrollContainer = document.querySelector('[data-scroll-container]');
     if (scrollContainer) {
       const maxScroll = scrollContainer.scrollHeight - scrollContainer.clientHeight;
@@ -85,7 +54,6 @@ const OrdersList = () => {
     }
   };
 
-  // Update scroll position when user scrolls manually
   const handleScroll = (event: React.UIEvent<HTMLDivElement>) => {
     const target = event.target as HTMLDivElement;
     const maxScroll = target.scrollHeight - target.clientHeight;
@@ -94,7 +62,6 @@ const OrdersList = () => {
     setScrollPosition(percentage);
   };
 
-  // Update max scroll position when dialog content changes
   useEffect(() => {
     if (dialogOpen && selectedOrder) {
       setTimeout(() => {
@@ -107,19 +74,25 @@ const OrdersList = () => {
     }
   }, [dialogOpen, selectedOrder]);
 
-  const handleStatusChange = (orderId: string, newStatus: string) => {
-    const updatedOrders = orders.map(order => 
-      order.orderId === orderId ? { ...order, status: newStatus } : order
-    );
-    
-    setOrders(updatedOrders);
-    localStorage.setItem('xeroxOrders', JSON.stringify(updatedOrders));
-    
-    if (selectedOrder?.orderId === orderId) {
-      setSelectedOrder({ ...selectedOrder, status: newStatus });
-    }
+  const handleStatusChange = async (orderId: string, newStatus: string) => {
+    try {
+      await apiService.updateOrderStatus(orderId, newStatus);
+      
+      const updatedOrders = orders.map(order => 
+        order.orderId === orderId ? { ...order, status: newStatus } : order
+      );
+      
+      setOrders(updatedOrders);
+      
+      if (selectedOrder?.orderId === orderId) {
+        setSelectedOrder({ ...selectedOrder, status: newStatus });
+      }
 
-    toast.success(`Order status updated to ${newStatus}`);
+      toast.success(`Order status updated to ${newStatus}`);
+    } catch (error) {
+      console.error('Error updating order status:', error);
+      toast.error('Failed to update order status');
+    }
   };
 
   const viewOrderDetails = (order: Order) => {
@@ -172,49 +145,22 @@ const OrdersList = () => {
     return size?.toUpperCase() || 'N/A';
   };
 
-  const handleFileDownload = (file: OrderFile) => {
+  const handleFileDownload = (file: { name: string; path?: string }) => {
     try {
       if (!file.path) {
-        file.path = `/uploads/${file.name}`;
-      }
-      
-      const storedFile = fileStorage.getFile(file.path);
-      
-      if (!storedFile) {
-        const allFiles = fileStorage.getAllFiles();
-        const fileByName = allFiles.find(f => f.name === file.name);
-        if (fileByName) {
-          const url = fileStorage.createDownloadUrl(fileByName);
-          if (url) {
-            const a = document.createElement('a');
-            a.style.display = 'none';
-            a.href = url;
-            a.download = file.name;
-            document.body.appendChild(a);
-            a.click();
-            URL.revokeObjectURL(url);
-            document.body.removeChild(a);
-            toast.success(`Downloading ${file.name}`);
-            return;
-          }
-        }
-        toast.error("File not found in storage");
+        toast.error("File path not available");
         return;
       }
       
-      if (!storedFile.data) {
-        toast.error("File data is not available");
-        return;
-      }
+      const filename = file.path.split('/').pop() || file.name;
+      const downloadUrl = apiService.getFileDownloadUrl(filename);
       
-      const url = URL.createObjectURL(storedFile.data);
       const a = document.createElement('a');
       a.style.display = 'none';
-      a.href = url;
+      a.href = downloadUrl;
       a.download = file.name;
       document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(url);
       document.body.removeChild(a);
       toast.success(`Downloading ${file.name}`);
     } catch (error) {
@@ -223,7 +169,6 @@ const OrdersList = () => {
     }
   };
 
-  // Pagination logic
   const totalPages = Math.ceil(orders.length / ordersPerPage);
   const startIndex = (currentPage - 1) * ordersPerPage;
   const endIndex = startIndex + ordersPerPage;
@@ -244,6 +189,14 @@ const OrdersList = () => {
       setCurrentPage(currentPage + 1);
     }
   };
+
+  if (loading) {
+    return (
+      <div className="text-center py-8">
+        <p className="text-gray-500">Loading orders...</p>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -295,7 +248,6 @@ const OrdersList = () => {
             </Table>
           </div>
 
-          {/* Pagination Controls */}
           {totalPages > 1 && (
             <div className="flex flex-col sm:flex-row items-center justify-between mt-6 gap-4">
               <div className="text-sm text-gray-500">
@@ -367,7 +319,6 @@ const OrdersList = () => {
             </DialogHeader>
             
             <div className="flex flex-1 gap-2 sm:gap-4 min-h-0">
-              {/* Main content area */}
               <div className="flex-1 min-w-0">
                 <ScrollArea 
                   className="h-full pr-2 sm:pr-4"
@@ -430,7 +381,6 @@ const OrdersList = () => {
                           <p className="text-xs sm:text-sm text-gray-500">Print Type</p>
                           <p className="text-sm">{getPrintTypeName(selectedOrder.printType)}</p>
                           
-                          {/* Show binding color type for binding orders */}
                           {(selectedOrder.printType === 'softBinding' || selectedOrder.printType === 'spiralBinding') && selectedOrder.bindingColorType && (
                             <>
                               <p className="mt-2 text-xs sm:text-sm text-gray-500">Binding Color Type</p>
@@ -438,7 +388,6 @@ const OrdersList = () => {
                             </>
                           )}
                           
-                          {/* Show custom print details */}
                           {selectedOrder.printType === 'custom' && (
                             <>
                               <p className="mt-2 text-xs sm:text-sm text-gray-500">Color Pages</p>
@@ -448,7 +397,6 @@ const OrdersList = () => {
                             </>
                           )}
                           
-                          {/* Show binding custom details */}
                           {(selectedOrder.printType === 'softBinding' || selectedOrder.printType === 'spiralBinding') && selectedOrder.bindingColorType === 'custom' && (
                             <>
                               <p className="mt-2 text-xs sm:text-sm text-gray-500">Color Pages (Binding)</p>
@@ -458,7 +406,6 @@ const OrdersList = () => {
                             </>
                           )}
                           
-                          {/* Show selected pages for non-custom orders */}
                           {selectedOrder.printType !== 'custom' && selectedOrder.printType !== 'customPrint' && selectedOrder.selectedPages && (
                             <>
                               <p className="mt-2 text-xs sm:text-sm text-gray-500">Selected Pages</p>
@@ -523,7 +470,6 @@ const OrdersList = () => {
                 </ScrollArea>
               </div>
               
-              {/* Scroll bar - only show on larger screens */}
               {maxScrollPosition > 0 && (
                 <div className="hidden sm:flex flex-col items-center justify-center w-8 bg-gray-50 rounded-lg p-2">
                   <Button

@@ -2,7 +2,6 @@ import { useState, useRef, DragEvent, ChangeEvent, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { Upload, X, FileText, Eye } from 'lucide-react';
-import { fileStorage, StoredFile } from '@/services/fileStorage';
 import { Document, Page, pdfjs } from 'react-pdf';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -70,8 +69,6 @@ const FileUploader = ({ onFilesChange, onPageCountChange, onPageRangeChange }: F
     if (validFiles.length > 0) {
       for (const file of validFiles) {
         try {
-          await fileStorage.saveFile(file);
-          
           if (file.type === 'application/pdf') {
             const reader = new FileReader();
             reader.onload = async (e) => {
@@ -88,8 +85,8 @@ const FileUploader = ({ onFilesChange, onPageCountChange, onPageRangeChange }: F
           }
           
         } catch (error) {
-          console.error('Error storing file:', error);
-          toast.error(`Failed to store ${file.name}`);
+          console.error('Error processing file:', error);
+          toast.error(`Failed to process ${file.name}`);
         }
       }
       

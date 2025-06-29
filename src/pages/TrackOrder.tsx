@@ -5,25 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Search, Package, Clock, CheckCircle, Phone, Mail, MapPin } from "lucide-react";
 import { toast } from "sonner";
-
-interface Order {
-  orderId: string;
-  fullName: string;
-  phoneNumber: string;
-  printType: string;
-  copies: number;
-  paperSize: string;
-  specialInstructions?: string;
-  orderDate: string;
-  status: string;
-  files: Array<{ name: string; size: number; type: string; path?: string }>;
-  totalCost: number;
-  printSide: string;
-  selectedPages?: string;
-  colorPages?: string;
-  bwPages?: string;
-  bindingColorType?: string;
-}
+import { apiService, Order } from '@/services/api';
 
 const TrackOrder = () => {
   const [orderId, setOrderId] = useState('');
@@ -31,7 +13,7 @@ const TrackOrder = () => {
   const [loading, setLoading] = useState(false);
   const [notFound, setNotFound] = useState(false);
 
-  const handleTrackOrder = () => {
+  const handleTrackOrder = async () => {
     if (!orderId.trim()) {
       toast.error("Please enter an order ID");
       return;
@@ -41,25 +23,17 @@ const TrackOrder = () => {
     setNotFound(false);
     setOrder(null);
 
-    // Simulate loading delay
-    setTimeout(() => {
-      try {
-        const existingOrders = JSON.parse(localStorage.getItem('xeroxOrders') || '[]') as Order[];
-        const foundOrder = existingOrders.find(order => order.orderId === orderId.trim());
-        
-        if (foundOrder) {
-          setOrder(foundOrder);
-          toast.success("Order found!");
-        } else {
-          setNotFound(true);
-          toast.error("Order not found. Please check your order ID.");
-        }
-      } catch (error) {
-        console.error('Error searching for order:', error);
-        toast.error("Error searching for order");
-      }
+    try {
+      const foundOrder = await apiService.getOrder(orderId.trim());
+      setOrder(foundOrder);
+      toast.success("Order found!");
+    } catch (error) {
+      console.error('Error searching for order:', error);
+      setNotFound(true);
+      toast.error("Order not found. Please check your order ID.");
+    } finally {
       setLoading(false);
-    }, 1000);
+    }
   };
 
   const getStatusIcon = (status: string) => {
@@ -196,12 +170,10 @@ const TrackOrder = () => {
                       <div className="space-y-2 text-sm">
                         <p><span className="font-medium">Print Type:</span> {getPrintTypeName(order.printType)}</p>
                         
-                        {/* Show binding color type for binding orders */}
                         {(order.printType === 'softBinding' || order.printType === 'spiralBinding') && order.bindingColorType && (
                           <p><span className="font-medium">Binding Color Type:</span> {getBindingColorTypeName(order.bindingColorType)}</p>
                         )}
                         
-                        {/* Only show these details for non-custom print orders */}
                         {order.printType !== 'customPrint' && (
                           <>
                             <p><span className="font-medium">Print Side:</span> {order.printSide === 'double' ? 'Double Sided' : 'Single Sided'}</p>
@@ -217,7 +189,6 @@ const TrackOrder = () => {
                     </div>
                   </div>
                   
-                  {/* Show page details for applicable order types */}
                   {order.printType !== 'customPrint' && (
                     <div className="mt-4 pt-4 border-t">
                       <h4 className="font-medium text-gray-900 mb-2">Page Details</h4>

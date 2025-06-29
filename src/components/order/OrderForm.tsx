@@ -25,6 +25,7 @@ import { z } from "zod";
 import FileUploader from './FileUploader';
 import { CheckCircle, Copy, Phone, Mail, Calculator, FileText, Clock } from "lucide-react";
 import { toast } from "sonner";
+import { apiService } from '@/services/api';
 
 const orderSchema = z.object({
   fullName: z.string().min(2, { message: "Name must be at least 2 characters." }),
@@ -50,10 +51,10 @@ const OrderForm = () => {
   const [totalPages, setTotalPages] = useState(0);
   const [selectedPages, setSelectedPages] = useState('all');
   const [calculatedCost, setCalculatedCost] = useState(0);
-  const [filePreviewUrls, setFilePreviewUrls] = useState<string[]>([]);
   const [isCustomPrint, setIsCustomPrint] = useState(false);
   const [isBindingType, setIsBindingType] = useState(false);
   const [isCustomPrintType, setIsCustomPrintType] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const form = useForm<OrderFormValues>({
     resolver: zodResolver(orderSchema),
@@ -105,7 +106,6 @@ const OrderForm = () => {
     } else if (totalPages <= 90) {
       return 35;
     } else {
-      // For every 20 pages above 90, add 5 rupees
       const extraPages = totalPages - 90;
       const extraGroups = Math.ceil(extraPages / 20);
       return 35 + (extraGroups * 5);
@@ -113,7 +113,6 @@ const OrderForm = () => {
   };
 
   const calculateCost = (values: OrderFormValues) => {
-    // Custom print type doesn't need cost calculation
     if (values.printType === 'customPrint') {
       setCalculatedCost(0);
       return 0;
@@ -126,9 +125,7 @@ const OrderForm = () => {
     
     let totalCost = 0;
     
-    // Base printing cost calculation
     if (bindingColorType === 'custom' && isBindingType) {
-      // Calculate cost for color pages in binding
       if (values.colorPages) {
         const colorPageRanges = values.colorPages.split(',').map(range => range.trim());
         let colorPagesCount = 0;
@@ -151,7 +148,6 @@ const OrderForm = () => {
         totalCost += colorPagesCount * colorCostPerPage;
       }
       
-      // Calculate cost for B&W pages in binding
       if (values.bwPages) {
         const bwPageRanges = values.bwPages.split(',').map(range => range.trim());
         let bwPagesCount = 0;
@@ -174,7 +170,6 @@ const OrderForm = () => {
         totalCost += bwPagesCount * bwCostPerPage;
       }
     } else if (values.printType === 'custom') {
-      // Calculate cost for color pages
       if (values.colorPages) {
         const colorPageRanges = values.colorPages.split(',').map(range => range.trim());
         let colorPagesCount = 0;
@@ -197,7 +192,6 @@ const OrderForm = () => {
         totalCost += colorPagesCount * colorCostPerPage;
       }
       
-      // Calculate cost for B&W pages
       if (values.bwPages) {
         const bwPageRanges = values.bwPages.split(',').map(range => range.trim());
         let bwPagesCount = 0;
@@ -220,7 +214,6 @@ const OrderForm = () => {
         totalCost += bwPagesCount * bwCostPerPage;
       }
     } else if (printType === 'softBinding' || printType === 'spiralBinding') {
-      // For binding types, calculate based on binding color type
       let pagesCount = calculateSelectedPagesCount(values.selectedPages || 'all', totalPages);
       let costPerPage;
       
@@ -237,14 +230,12 @@ const OrderForm = () => {
       
       totalCost = effectivePages * costPerPage;
       
-      // Add binding costs
       if (printType === 'softBinding') {
-        totalCost += 25; // Fixed 25 rupees for soft binding
+        totalCost += 25;
       } else if (printType === 'spiralBinding') {
         totalCost += calculateSpiralBindingCost(pagesCount);
       }
     } else {
-      // Regular printing (blackAndWhite or color)
       const isColor = values.printType === 'color';
       let pagesCount = calculateSelectedPagesCount(values.selectedPages || 'all', totalPages);
       
@@ -270,10 +261,6 @@ const OrderForm = () => {
 
   const handleFilesChange = (uploadedFiles: File[]) => {
     setFiles(uploadedFiles);
-    
-    // Create preview URLs for the files
-    const urls = uploadedFiles.map(file => URL.createObjectURL(file));
-    setFilePreviewUrls(urls);
   };
 
   const handlePageCountChange = (pageCount: number) => {
@@ -286,13 +273,6 @@ const OrderForm = () => {
     form.setValue('selectedPages', pageRange);
     calculateCost(form.getValues());
   };
-
-  // Cleanup preview URLs when component unmounts
-  useEffect(() => {
-    return () => {
-      filePreviewUrls.forEach(url => URL.revokeObjectURL(url));
-    };
-  }, [filePreviewUrls]);
 
   const copyOrderId = () => {
     navigator.clipboard.writeText(submittedOrderId);
@@ -329,82 +309,72 @@ const OrderForm = () => {
       return;
     }
 
-    // For custom print type, only validate required fields
-    if (data.printType === 'customPrint') {
-      const orderData = {
-        ...data,
-        files: files.map(file => ({
-          name: file.name,
-          size: file.size,
-          type: file.type,
-          path: `/uploads/${file.name}`,
-        })),
-        orderId: `ORD-${Date.now()}`,
-        orderDate: new Date().toISOString(),
-        status: "pending",
-        totalCost: 0, // No cost calculation for custom print
-        copies: 1, // Default value
-        paperSize: 'a4', // Default value
-        printSide: 'single', // Default value
-        selectedPages: 'all', // Default value
-      };
+    setIsSubmitting(true);
 
-      const existingOrders = JSON.parse(localStorage.getItem('xeroxOrders') || '[]');
-      localStorage.setItem('xeroxOrders', JSON.stringify([...existingOrders, orderData]));
+    try {
+      if (data.printType === 'customPrint') {
+        const orderData = {
+          ...data,
+          totalCost: 0,
+          copies: 1,
+          paperSize: 'a4',
+          printSide: 'single',
+          selectedPages: 'all',
+        };
 
-      setSubmittedOrderId(orderData.orderId);
-      setOrderSubmitted(true);
+        const response = await apiService.submitOrder(orderData, files);
+        setSubmittedOrderId(response.orderId);
+        setOrderSubmitted(true);
 
-      showToast({
-        title: "Order submitted successfully!",
-        description: `Your order ID is ${orderData.orderId}`,
-      });
-      return;
-    }
-
-    // Regular validation for other print types
-    if (data.printType === 'custom' || (isBindingType && data.bindingColorType === 'custom')) {
-      if (!data.colorPages && !data.bwPages) {
         showToast({
-          title: "Page selection required",
-          description: "Please specify either color or black & white pages.",
+          title: "Order submitted successfully!",
+          description: `Your order ID is ${response.orderId}`,
+        });
+        return;
+      }
+
+      if (data.printType === 'custom' || (isBindingType && data.bindingColorType === 'custom')) {
+        if (!data.colorPages && !data.bwPages) {
+          showToast({
+            title: "Page selection required",
+            description: "Please specify either color or black & white pages.",
+            variant: "destructive",
+          });
+          return;
+        }
+      } else if (!validatePageSelection(data.selectedPages || 'all', totalPages)) {
+        showToast({
+          title: "Invalid page selection",
+          description: "Please check your page selection.",
           variant: "destructive",
         });
         return;
       }
-    } else if (!validatePageSelection(data.selectedPages || 'all', totalPages)) {
+
+      const orderData = {
+        ...data,
+        totalCost: calculatedCost,
+      };
+
+      const response = await apiService.submitOrder(orderData, files);
+      setSubmittedOrderId(response.orderId);
+      setOrderSubmitted(true);
+
       showToast({
-        title: "Invalid page selection",
-        description: "Please check your page selection.",
+        title: "Order submitted successfully!",
+        description: `Your order ID is ${response.orderId}`,
+      });
+
+    } catch (error) {
+      console.error('Error submitting order:', error);
+      showToast({
+        title: "Error submitting order",
+        description: error instanceof Error ? error.message : "Please try again later.",
         variant: "destructive",
       });
-      return;
+    } finally {
+      setIsSubmitting(false);
     }
-
-    const orderData = {
-      ...data,
-      files: files.map(file => ({
-        name: file.name,
-        size: file.size,
-        type: file.type,
-        path: `/uploads/${file.name}`,
-      })),
-      orderId: `ORD-${Date.now()}`,
-      orderDate: new Date().toISOString(),
-      status: "pending",
-      totalCost: calculatedCost,
-    };
-
-    const existingOrders = JSON.parse(localStorage.getItem('xeroxOrders') || '[]');
-    localStorage.setItem('xeroxOrders', JSON.stringify([...existingOrders, orderData]));
-
-    setSubmittedOrderId(orderData.orderId);
-    setOrderSubmitted(true);
-
-    showToast({
-      title: "Order submitted successfully!",
-      description: `Your order ID is ${orderData.orderId}`,
-    });
   };
 
   const startNewOrder = () => {
@@ -413,14 +383,12 @@ const OrderForm = () => {
     setFiles([]);
     setTotalPages(0);
     setCalculatedCost(0);
-    setFilePreviewUrls([]);
     setIsCustomPrint(false);
     setIsBindingType(false);
     setIsCustomPrintType(false);
     form.reset();
   };
 
-  // Watch form values for cost calculation
   useEffect(() => {
     const subscription = form.watch((value) => {
       if (totalPages > 0 && value.printType !== 'customPrint') {
@@ -430,7 +398,6 @@ const OrderForm = () => {
     return () => subscription.unsubscribe();
   }, [form.watch, totalPages]);
 
-  // Watch print type for custom printing option and binding types
   useEffect(() => {
     const subscription = form.watch((value, { name }) => {
       if (name === 'printType') {
@@ -439,13 +406,11 @@ const OrderForm = () => {
         setIsBindingType(printType === 'softBinding' || printType === 'spiralBinding');
         setIsCustomPrintType(printType === 'customPrint');
         
-        // Reset color/bw pages when switching print types
         if (printType !== 'custom') {
           form.setValue('colorPages', '');
           form.setValue('bwPages', '');
         }
         
-        // Reset binding color type when switching away from binding
         if (printType !== 'softBinding' && printType !== 'spiralBinding') {
           form.setValue('bindingColorType', 'blackAndWhite');
         }
@@ -455,7 +420,6 @@ const OrderForm = () => {
         const bindingColorType = value.bindingColorType;
         setIsCustomPrint(bindingColorType === 'custom');
         
-        // Reset color/bw pages when switching binding color types
         if (bindingColorType !== 'custom') {
           form.setValue('colorPages', '');
           form.setValue('bwPages', '');
@@ -500,7 +464,6 @@ const OrderForm = () => {
               </p>
             </div>
 
-            {/* Admin Contact Message */}
             <div className="bg-blue-50 p-4 sm:p-6 rounded-lg border border-blue-200">
               <div className="flex items-center justify-center gap-3 mb-4">
                 <Clock className="h-5 w-5 sm:h-6 sm:w-6 text-blue-600" />
@@ -628,7 +591,6 @@ const OrderForm = () => {
                 )}
               />
 
-              {/* Show binding color type selection when binding is selected */}
               {isBindingType && (
                 <FormField
                   control={form.control}
@@ -660,7 +622,6 @@ const OrderForm = () => {
                 />
               )}
 
-              {/* Only show these fields for non-custom print types */}
               {!isCustomPrintType && (
                 <>
                   <FormField
@@ -876,7 +837,6 @@ const OrderForm = () => {
             )}
           </div>
 
-          {/* Show cost calculation for all types except custom print */}
           {calculatedCost > 0 && !isCustomPrintType && (
             <Card className="bg-xerox-50 border-xerox-200">
               <CardContent className="pt-6">
@@ -919,7 +879,6 @@ const OrderForm = () => {
             </Card>
           )}
 
-          {/* Show quote required message for custom print */}
           {isCustomPrintType && (
             <Card className="bg-blue-50 border-blue-200">
               <CardContent className="pt-6">
@@ -945,9 +904,9 @@ const OrderForm = () => {
             <Button 
               type="submit" 
               className="w-full md:w-auto bg-xerox-600 hover:bg-xerox-700"
-              disabled={files.length === 0}
+              disabled={files.length === 0 || isSubmitting}
             >
-              Submit Order
+              {isSubmitting ? 'Submitting Order...' : 'Submit Order'}
             </Button>
           </div>
         </form>

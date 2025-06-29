@@ -11,7 +11,7 @@ const Footer = () => {
           <div className="md:col-span-2">
             <div className="flex items-center mb-4">
               <img 
-                src="https://envs.sh/M6q.jpg" 
+                src="/images/main.jpg" 
                 alt="Aishwarya Xerox Logo" 
                 className="h-8 w-8 mr-3 rounded-full object-cover"
               />

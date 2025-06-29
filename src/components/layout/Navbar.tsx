@@ -13,7 +13,7 @@ const Navbar = () => {
           <div className="flex items-center">
             <Link to="/" className="flex-shrink-0 flex items-center">
               <img 
-                src="https://envs.sh/M6q.jpg" 
+                src="/images/main.jpg" 
                 alt="Aishwarya Xerox Logo" 
                 className="h-8 w-8 sm:h-10 sm:w-10 mr-2 sm:mr-3 rounded-full object-cover"
               />
